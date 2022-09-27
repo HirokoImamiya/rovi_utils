@@ -27,6 +27,7 @@ Param={
   "angle":90,
   "pitch":0,
   "var":[],
+  "pitch_subd":0,
   "repeat":1,
   "eval_threshold":0
 }
@@ -41,16 +42,6 @@ Config={
   "base_frame_id":"world",
   "master_main_frame_id":"camera/master0",
   "axis_frame_id":"axis",
-}
-Score={
-  "proc":[],
-  "Tx":[],
-  "Ty":[],
-  "Tz":[],
-  "Qx":[],
-  "Qy":[],
-  "Qz":[],
-  "Qw":[]
 }
 EvalScore={
   "fitness":[None],
@@ -105,11 +96,13 @@ def set_axis_pos():
   axis_master=Config['axis_frame_id']+'/master0'
   axis_solve=Config['axis_frame_id']+'/solve0'
   wTc=getRT(base,target)
+  Tm=np.eye(4,dtype=float)
+  Tm[:3,3]=np.array(wTc[:3,3]).T
   tf=TransformStamped()
   tf.header.stamp=rospy.Time.now()
   tf.header.frame_id=base
   tf.child_frame_id=axis_master
-  tf.transform=tflib.fromRT(wTc)
+  tf.transform=tflib.fromRT(Tm)
   broadcaster.sendTransform(tf)
 
   ts=get_solve_result()
@@ -133,33 +126,38 @@ def set_solve_sub_pos(tr):
   tf.transform=tr
   broadcaster.sendTransform(tf)
 
-def set_score():
-  global Score,MsgScore,EvalScore
-  score=Float32MultiArray()
-  score.layout.data_offset=0
-  for n,sc in enumerate(Score):
-    score.layout.dim.append(MultiArrayDimension())
-    score.layout.dim[n].label=sc
-    score.layout.dim[n].size=len(Score[sc])
-    score.layout.dim[n].stride=1
-    score.data.extend(Score[sc])
-  MsgScore.append(score)
-  pick=np.argmax(Score['fitness'])
-  EvalScore["fitness"].append(Score['fitness'][pick])
-  EvalScore["rmse"].append(Score['rmse'][pick])
+def set_score(score):
+  global MsgScore,EvalScore
+  msg_score=Float32MultiArray()
+  msg_score.layout.data_offset=0
+  for n,sc in enumerate(score):
+    msg_score.layout.dim.append(MultiArrayDimension())
+    msg_score.layout.dim[n].label=sc
+    msg_score.layout.dim[n].size=len(score[sc])
+    msg_score.layout.dim[n].stride=1
+    msg_score.data.extend(score[sc])
+  MsgScore.append(msg_score)
+  pick=np.argmax(score['fitness'])
+  EvalScore["fitness"].append(score['fitness'][pick])
+  EvalScore["rmse"].append(score['rmse'][pick])
   ts=Transform()
-  ts.translation.x=Score["Tx"][pick]
-  ts.translation.y=Score["Ty"][pick]
-  ts.translation.z=Score["Tz"][pick]
-  ts.rotation.x=Score["Qx"][pick]
-  ts.rotation.y=Score["Qy"][pick]
-  ts.rotation.z=Score["Qz"][pick]
-  ts.rotation.w=Score["Qw"][pick]
+  ts.translation.x=score["Tx"][pick]
+  ts.translation.y=score["Ty"][pick]
+  ts.translation.z=score["Tz"][pick]
+  ts.rotation.x=score["Qx"][pick]
+  ts.rotation.y=score["Qy"][pick]
+  ts.rotation.z=score["Qz"][pick]
+  ts.rotation.w=score["Qw"][pick]
   EvalScore["transform"].append(ts)
 
-def cb_score(n):
+def cb_score(n,finish):
+  global Step
+  if finish:
+    Step=(-1)
+    pub_score.publish(MsgScore[n])
+  else:
+    Step=Step+1
   set_solve_sub_pos(EvalScore["transform"][n])
-  pub_score.publish(MsgScore[n])
 
 def cb_master(event):
   if Config["proc"]==0:
@@ -170,7 +168,7 @@ def cb_master(event):
 
 def cb_save(msg):
   global Model,tfReg
-  if isEvaluate():
+  if isEvaluate() is False:
     pub_saved.publish(mTrue)
     return
 #save point cloud
@@ -294,8 +292,7 @@ def cb_judged(msg):
     isExec=False
 
 def do_eval_solve():
-  global Score
-  for key in Score: Score[key]=[]
+  score={"proc":[],"Tx":[],"Ty":[],"Tz":[],"Qx":[],"Qy":[],"Qz":[],"Qw":[]}
   result=solver.solve(Scene,Param)
   RTs=result["transform"]
   if np.all(RTs[0]):
@@ -308,34 +305,27 @@ def do_eval_solve():
     print('Post',tflib.fromRT(rt))
     tf=tflib.fromRT(rt)
 
-    Score["Tx"].append(tf.translation.x)
-    Score["Ty"].append(tf.translation.y)
-    Score["Tz"].append(tf.translation.z)
-    Score["Qx"].append(tf.rotation.x)
-    Score["Qy"].append(tf.rotation.y)
-    Score["Qz"].append(tf.rotation.z)
-    Score["Qw"].append(tf.rotation.w)
+    score["Tx"].append(tf.translation.x)
+    score["Ty"].append(tf.translation.y)
+    score["Tz"].append(tf.translation.z)
+    score["Qx"].append(tf.rotation.x)
+    score["Qy"].append(tf.rotation.y)
+    score["Qz"].append(tf.rotation.z)
+    score["Qw"].append(tf.rotation.w)
 
   result["proc"]=float(Config["proc"])
   for key in result:
     if type(result[key]) is not list: # scalar->list
-      Score[key]=[result[key]]*len(RTs)
+      score[key]=[result[key]]*len(RTs)
     elif type(result[key][0]) is float: # float->list
-      Score[key]=result[key]
-  set_score()
+      score[key]=result[key]
+  set_score(score)
   return True
 
-def cb_solve_do(msg):
-  global Step,EvalScore,MsgScore,isExec
+def rotz_eval_solve(wTc,bTu,vars):
+  global EvalScore,MsgScore
   for key in EvalScore: EvalScore[key]=[]
   MsgScore=list()
-  if Param['angle']: vars=[0,Param['angle'],360-Param['angle']]
-  elif Param['pitch']: vars=np.arange(Param['var'][0],Param['var'][1],Param['pitch'])
-  else: vars=Param['var']
-  uf=Config['axis_frame_id'] + '/solve0'
-  source=Config['solve_frame_id']
-  target=Config['solve_frame_id']+'/solve0'
-  wTc=getRT(uf, target)
   result=False
   if wTc is not None:
     for n,rz in enumerate(vars):
@@ -349,31 +339,58 @@ def cb_solve_do(msg):
       Tm=np.eye(4)
       Tm[:3,:3]=rot.as_matrix()
       Tm[:3,3]=np.array(pos[:3]).T
-      bTu=getRT(source, uf)
       Param['tf']=tflib.tf2dict(tflib.fromRT(bTu.dot(Tm)))
       result=do_eval_solve()
       if result is False:
         break
       rospy.loginfo("post::eval score fitness=%.2f rmse=%.2f",EvalScore["fitness"][n],EvalScore["rmse"][n])
-      cb_score(n)
+      cb_score(n,False)
       stats={}
-      stats['fitness'+str(n+1)]=EvalScore["fitness"][n]
+      stats['angle_temp']=rz
+      stats['fitness_temp']=EvalScore["fitness"][n]
       pub_report.publish(str(stats))
-      Step=Step+1
-#      rospy.sleep(1)
-      rospy.sleep(5)
+      rospy.sleep(1)
+  return result
+
+def cb_solve_do(msg):
+  global isExec
+#  rospy.sleep(5)
+  if Param['angle']: vars=[0,Param['angle'],360-Param['angle']]
+  elif Param['pitch']: vars=np.arange(Param['var'][0],Param['var'][1],Param['pitch'])
+  else: vars=Param['var']
+  uf=Config['axis_frame_id'] + '/solve0'
+  source=Config['solve_frame_id']
+  target=Config['solve_frame_id']+'/solve0'
+  wTc=getRT(uf, target)
+  bTu=getRT(source, uf)
+  result=rotz_eval_solve(wTc,bTu,vars)
+  stats={}
+  if result:
+    if Param['pitch'] and Param['pitch_subd']:
+      m=np.argmax(EvalScore['fitness'])
+      stats['angle_step1']=vars[m]
+      stats['fitness_step1']=EvalScore["fitness"][m]
+      pub_report.publish(str(stats))
+      start=vars[m]-Param['pitch']/2
+      end=vars[m]+Param['pitch']/2
+      print("post eval step2 range=", start, ",", end)
+      vars=np.arange(start,end,Param['pitch_subd'])
+      result=rotz_eval_solve(wTc,bTu,vars)
+      if result:
+        m=np.argmax(EvalScore['fitness'])
+        stats['angle_step2']=vars[m]
+        stats['fitness_step2']=EvalScore["fitness"][m]
 
   if result:
-    m=np.argmax(EvalScore['fitness'])
-    rospy.loginfo("post::eval score fix n=%d",m)
-    Step=(-1)
-    cb_score(m)
-    stats={}
-    stats['num']=m+1
-    pub_report.publish(str(stats))
+    rospy.loginfo("post::eval score fix angle=%d",vars[m])
+    cb_score(m,True)
+    stats['angle']=vars[m]
   else:
     pub_Y2.publish(mFalse)
     isExec=False
+
+  if len(stats):
+    pub_report.publish(str(stats))
 
 def cb_ps(msg,n):
   global Scene

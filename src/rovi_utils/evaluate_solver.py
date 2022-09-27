@@ -40,30 +40,24 @@ def solve(datArray,prm):
     pc=fromNumpy(dat)
     scnPcArray.append(pc)
   tfeat=time.time()-t1
-  print("time for calc feature",tfeat)
+  print("evaluate solver::time for calc feature",tfeat)
   t1=time.time()
   if 'tf' in Param:
     RT=tflib.toRT(tflib.dict2tf(Param['tf']))
   else:
     RT=np.eye(4)
-  print("#### evaluate solver RT=", RT)
-  print("#### evaluate solver repeat=", Param["repeat"])
-  print("#### evaluate solver len=", len(score["transform"]))
   if Param["repeat"]!=len(score["transform"]):
     n=Param["repeat"]
     score={"transform":[RT]*n,"fitness":[None]*n,"rmse":[None]*n}
-  print("#### evaluate solver eval_threshold=", Param["eval_threshold"])
-#  print("#### evaluate solver transform=", score["transform"])
   for n in range(Param["repeat"]):
-#  result=o3d.pipelines.registration.evaluate_registration(modPcArray[0],scnPcArray[0],Param["eval_threshold"],score["transform"][n])
     result=o3d.pipelines.registration.evaluate_registration(modPcArray[0],scnPcArray[0],Param["eval_threshold"],RT)
     score["transform"][n]=RT
     score["fitness"][n]=result.fitness
     score["rmse"][n]=result.inlier_rmse
   tmatch=time.time()-t1
-  print("time for feature matching",tmatch)
+  print("evaluate solver::time for feature matching",tmatch)
   score["tfeat"]=tfeat
   score["tmatch"]=tmatch
-  print("#### evaluate solver result=", score)
+  print("evaluate solver::result=", score)
   return score
 

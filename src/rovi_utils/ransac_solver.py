@@ -13,7 +13,8 @@ Param={
   "distance_threshold":0,
   "icp_threshold":0.003,
   "eval_threshold":0,
-  "repeat":1
+  "repeat":1,
+  "remesh":0
 }
 
 modFtArray=[]
@@ -45,6 +46,12 @@ def _get_features(cloud):
     cds=o3d.geometry.PointCloud.voxel_down_sample(cloud,voxel_size=Param["feature_mesh"])
   return cds,o3d.pipelines.registration.compute_fpfh_feature(cds,o3d.geometry.KDTreeSearchParamRadius(radius=Param["feature_radius"]))
 
+def _get_remesh(cloud):
+  cds=cloud
+  if Param["remesh"]>0:
+    cds=o3d.geometry.PointCloud.voxel_down_sample(cloud,voxel_size=Param["remesh"])
+  return cds
+
 def learn(datArray,prm):
   global modFtArray,modPcArray,Param
   Param.update(prm)
@@ -52,6 +59,7 @@ def learn(datArray,prm):
   modPcArray=[]
   for dat in datArray:
     pc=fromNumpy(dat)
+    pc=_get_remesh(pc)
     modPcArray.append(pc)
     modFtArray.append(_get_features(pc))
   return modPcArray
