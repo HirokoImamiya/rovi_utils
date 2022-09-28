@@ -366,11 +366,11 @@ def cb_solve_do(msg):
   result=rotz_eval_solve(wTc,bTu,vars)
   stats={}
   if result:
+    m=np.argmax(EvalScore['fitness'])
+    stats['angle_step1']=vars[m]
+    stats['fitness_step1']=EvalScore["fitness"][m]
+    pub_report.publish(str(stats))
     if Param['pitch'] and Param['pitch_subd']:
-      m=np.argmax(EvalScore['fitness'])
-      stats['angle_step1']=vars[m]
-      stats['fitness_step1']=EvalScore["fitness"][m]
-      pub_report.publish(str(stats))
       start=vars[m]-Param['pitch']/2
       end=vars[m]+Param['pitch']/2
       print("post eval step2 range=", start, ",", end)
