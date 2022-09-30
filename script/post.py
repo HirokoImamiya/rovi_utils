@@ -42,6 +42,7 @@ Config={
   "base_frame_id":"world",
   "master_main_frame_id":"camera/master0",
   "axis_frame_id":"axis",
+  "debugoutput":False
 }
 EvalScore={
   "fitness":[None],
@@ -92,31 +93,32 @@ def get_solve_result():
 
 def set_axis_pos():
   base=Config['base_frame_id']
-  target=Config['master_main_frame_id']+'/axis0'
+  target=Config['master_main_frame_id']+'/axis'
   axis_master=Config['axis_frame_id']+'/master0'
   axis_solve=Config['axis_frame_id']+'/solve0'
   wTc=getRT(base,target)
-  Tm=np.eye(4,dtype=float)
-  Tm[:3,3]=np.array(wTc[:3,3]).T
-  tf=TransformStamped()
-  tf.header.stamp=rospy.Time.now()
-  tf.header.frame_id=base
-  tf.child_frame_id=axis_master
-  tf.transform=tflib.fromRT(Tm)
-  broadcaster.sendTransform(tf)
+# Config['master_main_frame_id']+'/axis' は 中心軸ソルバ(rotsym_solver)の結果
+# Config['master_main_frame_id'] マスタの最初の撮影点は対象の中心軸付近（上空から撮影）を前提
+  if wTc is not None:
+    tf=TransformStamped()
+    tf.header.stamp=rospy.Time.now()
+    tf.header.frame_id=base
+    tf.child_frame_id=axis_master
+    tf.transform=tflib.fromRT(wTc)
+    broadcaster.sendTransform(tf)
 
-  ts=get_solve_result()
-  bTc=getRT('base',axis_master)
-  cTb=np.linalg.inv(bTc)
-  cTc=tflib.toRT(ts)
-  Tm=cTb.dot(cTc).dot(bTc)
-  wTc=getRT(base,axis_master)
-  tf=TransformStamped()
-  tf.header.stamp=rospy.Time.now()
-  tf.header.frame_id=base
-  tf.child_frame_id=axis_solve
-  tf.transform=tflib.fromRT(wTc.dot(Tm))
-  broadcaster.sendTransform(tf)
+    ts=get_solve_result()
+    bTc=getRT('base',axis_master)
+    cTb=np.linalg.inv(bTc)
+    cTc=tflib.toRT(ts)
+    Tm=cTb.dot(cTc).dot(bTc)
+    wTc=getRT(base,axis_master)
+    tf=TransformStamped()
+    tf.header.stamp=rospy.Time.now()
+    tf.header.frame_id=base
+    tf.child_frame_id=axis_solve
+    tf.transform=tflib.fromRT(wTc.dot(Tm))
+    broadcaster.sendTransform(tf)
 
 def set_solve_sub_pos(tr):
   tf=TransformStamped()
@@ -266,17 +268,20 @@ def cb_judged(msg):
   global isExec
   finish=False
   if isEvaluate():
-    if Step==0:
-      if len(list(filter(lambda x:len(x)>0,Scene)))==0:
-        pub_msg.publish("post::Lacked scene to solve")
-        pub_Y2.publish(mFalse)
-        isExec=False
-      else:
-        if Param['axis_save']:
-          set_axis_pos()
-        print("cb_solve_do start")
-        rospy.Timer(rospy.Duration(0.01),cb_solve_do,oneshot=True)
-    elif Step<0:
+    if msg.data:
+      if Step==0:
+        if len(list(filter(lambda x:len(x)>0,Scene)))==0:
+          pub_msg.publish("post::Lacked scene to solve")
+          pub_Y2.publish(mFalse)
+          isExec=False
+        else:
+          if Param['axis_save']:
+            set_axis_pos()
+          print("cb_solve_do start")
+          rospy.Timer(rospy.Duration(0.01),cb_solve_do,oneshot=True)
+      elif Step<0:
+        finish=True
+    else:
       finish=True
   else:
     if Param['axis_save']:
@@ -343,18 +348,18 @@ def rotz_eval_solve(wTc,bTu,vars):
       result=do_eval_solve()
       if result is False:
         break
-      rospy.loginfo("post::eval score fitness=%.2f rmse=%.2f",EvalScore["fitness"][n],EvalScore["rmse"][n])
-      cb_score(n,False)
-      stats={}
-      stats['angle_temp']=rz
-      stats['fitness_temp']=EvalScore["fitness"][n]
-      pub_report.publish(str(stats))
-      rospy.sleep(1)
+      if Config['debugoutput']:
+        rospy.loginfo("post::eval score fitness=%.2f rmse=%.2f",EvalScore["fitness"][n],EvalScore["rmse"][n])
+        cb_score(n,False)
+        stats={}
+        stats['angle_temp']=rz
+        stats['fitness_temp']=EvalScore["fitness"][n]
+        pub_report.publish(str(stats))
+        rospy.sleep(0.01)
   return result
 
 def cb_solve_do(msg):
   global isExec
-#  rospy.sleep(5)
   if Param['angle']: vars=[0,Param['angle'],360-Param['angle']]
   elif Param['pitch']: vars=np.arange(Param['var'][0],Param['var'][1],Param['pitch'])
   else: vars=Param['var']

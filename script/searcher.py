@@ -299,9 +299,10 @@ def cb_solve_do(msg):
       tf=tflib.fromRT(wrt[np.argmin(np.array(rot))])
       print('TF axis 1',tf)
       solver.score["transform"][n]=tflib.toRT(tf)
-      Param["distance_threshold"]=0
-      Param["repeat"]=1
-      result=solver.solve(Scene,Param)
+      prm=Param.copy()
+      prm["distance_threshold"]=0
+      prm["repeat"]=1
+      result=solver.solve(Scene,prm)
       tf=tflib.fromRT(result["transform"][0])
       print('TF axis 2',tf)
     else:
