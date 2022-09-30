@@ -26,7 +26,6 @@ from geometry_msgs.msg import TransformStamped
 from rovi_utils import tflib
 from rovi_utils import sym_solver as rotsym
 from rovi_utils import axis_solver as rotjour
-from rovi_utils import axis_bb_solver as axisbb
 from scipy import optimize
 
 Param={
@@ -129,16 +128,6 @@ def learn_journal(pc,base,ofs,wid):
       print('No journal')
       pub_err.publish("searcher::No journal")
 
-def learn_axis(pc):
-  if Config["proc"]==0:
-    axis=axisbb.solve(pc)
-    tf=TransformStamped()
-    tf.header.stamp=rospy.Time.now()
-    tf.header.frame_id=Config["master_frame_ids"][0]
-    tf.child_frame_id=Config["master_frame_ids"][0]+'/axis0'
-    tf.transform=tflib.fromRT(axis)
-    tfReg.append(tf)
-
 def cb_master(event):
   if Config["proc"]==0:
     for n,l in enumerate(Config["scenes"]):
@@ -222,7 +211,6 @@ def cb_load(msg):
   pcd=learn_feat(Model,Param)
   learn_rot(pcd[0],Param['rotate'],Param['icp_threshold'])
   learn_journal(pcd[0],Param["cutter"]["base"],Param["cutter"]["offset"],Param["cutter"]["width"])
-  learn_axis(pcd[0])
   if JourAxis is not None:
     lvar=Param["cutter"]
     pcx=pcd[0].transform(JourAxis)

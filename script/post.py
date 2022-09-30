@@ -22,9 +22,7 @@ from rovi_utils import tflib
 from rovi_utils.srv import TextFilter
 
 Param={
-  "axis_save":True,
   "evaluate":False,
-  "angle":90,
   "pitch":0,
   "var":[],
   "pitch_subd":0,
@@ -266,27 +264,20 @@ def cb_main_solved(msg):
 
 def cb_judged(msg):
   global isExec
-  finish=False
+  finish=True
   if isEvaluate():
     if msg.data:
+      if Step>=0:
+        finish=False
       if Step==0:
         if len(list(filter(lambda x:len(x)>0,Scene)))==0:
           pub_msg.publish("post::Lacked scene to solve")
           pub_Y2.publish(mFalse)
           isExec=False
         else:
-          if Param['axis_save']:
-            set_axis_pos()
+          set_axis_pos()
           print("cb_solve_do start")
           rospy.Timer(rospy.Duration(0.01),cb_solve_do,oneshot=True)
-      elif Step<0:
-        finish=True
-    else:
-      finish=True
-  else:
-    if Param['axis_save']:
-      set_axis_pos()
-    finish=True
 
   if finish:
     tsolve=time.time()-T1
@@ -360,8 +351,7 @@ def rotz_eval_solve(wTc,bTu,vars):
 
 def cb_solve_do(msg):
   global isExec
-  if Param['angle']: vars=[0,Param['angle'],360-Param['angle']]
-  elif Param['pitch']: vars=np.arange(Param['var'][0],Param['var'][1],Param['pitch'])
+  if Param['pitch']: vars=np.arange(Param['var'][0],Param['var'][1],Param['pitch'])
   else: vars=Param['var']
   uf=Config['axis_frame_id'] + '/solve0'
   source=Config['solve_frame_id']
