@@ -30,6 +30,15 @@ Param={
 
 Stats={}
 
+def out_report(stats):
+  if Config["type"]=="sub":
+    sub_stats={}
+    for key in stats.keys():
+      sub_stats[key+"_sub"]=stats[key]
+    pub_report.publish(str(sub_stats))
+  else:
+    pub_report.publish(str(stats))
+
 def cb_redraw(event):
   pub_Y1.publish(mTrue)
 
@@ -91,7 +100,7 @@ def cb_tfchk():
     stats["transZ"]=bTs[2,3]
 #check collision
   stats,judge=cb_judge(stats)
-  pub_report.publish(str(stats))
+  out_report(stats)
   cb_done(judge)
 
 def cb_stats():
@@ -148,7 +157,7 @@ def cb_stats():
     stats["Vy"]=np.rad2deg(rvec[1])
     stats["Vz"]=np.rad2deg(rvec[2])
   broadcaster.sendTransform(btf)
-  pub_report.publish(str(stats))
+  out_report(stats)
   if not judge:
     cb_done(False)
   else:
@@ -170,18 +179,19 @@ def cb_score(msg):
 def cb_clear(msg):
   global Stats
   Stats={}
-  tf=TransformStamped()
-  tf.header.stamp=rospy.Time.now()
-  tf.header.frame_id=Config["solve_frame_id"]
-  tf.child_frame_id=Config["solve_frame_id"]+"/solve0"
-  tf.transform.translation.x=0
-  tf.transform.translation.y=0
-  tf.transform.translation.z=1000000
-  tf.transform.rotation.x=0
-  tf.transform.rotation.y=0
-  tf.transform.rotation.z=0
-  tf.transform.rotation.w=1
-  broadcaster.sendTransform([tf])
+  if Config["type"]=="main":
+    tf=TransformStamped()
+    tf.header.stamp=rospy.Time.now()
+    tf.header.frame_id=Config["solve_frame_id"]
+    tf.child_frame_id=Config["solve_frame_id"]+"/solve0"
+    tf.transform.translation.x=0
+    tf.transform.translation.y=0
+    tf.transform.translation.z=1000000
+    tf.transform.rotation.x=0
+    tf.transform.rotation.y=0
+    tf.transform.rotation.z=0
+    tf.transform.rotation.w=1
+    broadcaster.sendTransform([tf])
 
 def parse_argv(argv):
   args={}

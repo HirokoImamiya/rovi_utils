@@ -150,13 +150,21 @@ def set_score(score):
   ts.rotation.w=score["Qw"][pick]
   EvalScore["transform"].append(ts)
 
-def cb_score(n,finish):
-  global Step
+def cb_done(result,finish=False):
+  global isExec
   if finish:
-    Step=(-1)
+    tsolve=time.time()-T1
+    stats={}
+    stats['tsolve']=tsolve
+    pub_report.publish(str(stats))
+  f=Bool()
+  f.data=result
+  pub_Y2.publish(f)
+  isExec=False
+
+def cb_score(n,finish):
+  if finish:
     pub_score.publish(MsgScore[n])
-  else:
-    Step=Step+1
   set_solve_sub_pos(EvalScore["transform"][n])
 
 def cb_master(event):
@@ -248,44 +256,37 @@ def cb_load(msg):
   pub_loaded.publish(mTrue)
 
 def cb_solve(msg):
-  global isExec,T1,Step
+  global isExec,T1
   isExec=True
-  Step=0
   cb_busy(mTrue)
   T1=time.time()
   update_param()
   print("cb_solve start")
 
 def cb_main_solved(msg):
-  global isExec
   if msg.data is False:
-    isExec=False
-    pub_Y2.publish(mFalse)
+    cb_done(False)
 
-def cb_judged(msg):
-  global isExec
-  finish=True
+def cb_main_judged(msg):
   if isEvaluate():
     if msg.data:
-      if Step>=0:
-        finish=False
-      if Step==0:
-        if len(list(filter(lambda x:len(x)>0,Scene)))==0:
-          pub_msg.publish("post::Lacked scene to solve")
-          pub_Y2.publish(mFalse)
-          isExec=False
-        else:
-          set_axis_pos()
-          print("cb_solve_do start")
-          rospy.Timer(rospy.Duration(0.01),cb_solve_do,oneshot=True)
+      if len(list(filter(lambda x:len(x)>0,Scene)))==0:
+        pub_msg.publish("post::Lacked scene to solve")
+        cb_done(False)
+      else:
+        set_axis_pos()
+        print("cb_solve_do start")
+        rospy.Timer(rospy.Duration(0.01),cb_solve_do,oneshot=True)
+    else:
+      cb_done(msg.data,True)
+      print("post solve main end")
+  else:
+    cb_done(msg.data,True)
+    print("post solve main end")
 
-  if finish:
-    tsolve=time.time()-T1
-    stats={}
-    stats['tsolve']=tsolve
-    pub_report.publish(str(stats))
-    pub_Y2.publish(msg)
-    isExec=False
+def cb_sub_judged(msg):
+  cb_done(msg.data,True)
+  print("post solve sub end")
 
 def do_eval_solve():
   score={"proc":[],"Tx":[],"Ty":[],"Tz":[],"Qx":[],"Qy":[],"Qz":[],"Qw":[]}
@@ -350,7 +351,6 @@ def rotz_eval_solve(wTc,bTu,vars):
   return result
 
 def cb_solve_do(msg):
-  global isExec
   if Param['pitch']: vars=np.arange(Param['var'][0],Param['var'][1],Param['pitch'])
   else: vars=Param['var']
   uf=Config['axis_frame_id'] + '/solve0'
@@ -381,8 +381,7 @@ def cb_solve_do(msg):
     cb_score(m,True)
     stats['angle']=vars[m]
   else:
-    pub_Y2.publish(mFalse)
-    isExec=False
+    cb_done(False)
 
   if len(stats):
     pub_report.publish(str(stats))
@@ -409,7 +408,6 @@ def cb_clear(msg):
   rospy.Timer(rospy.Duration(0.1),cb_master,oneshot=True)
 
 def cb_busy(event):
-  global isExec
   if isExec:
     pub_busy.publish(mTrue)
     rospy.Timer(rospy.Duration(0.5),cb_busy,oneshot=True)
@@ -481,7 +479,8 @@ pub_score=rospy.Publisher("~score",Float32MultiArray,queue_size=1)
 rospy.Subscriber("~clear",Bool,cb_clear)
 rospy.Subscriber("~solve",Bool,cb_solve)
 rospy.Subscriber("~main_solved",Bool,cb_main_solved)
-rospy.Subscriber("~judged",Bool,cb_judged)
+rospy.Subscriber("~main_judged",Bool,cb_main_judged)
+rospy.Subscriber("~sub_judged",Bool,cb_sub_judged)
 if Config["proc"]==0: rospy.Subscriber("~save",Bool,cb_save)
 rospy.Subscriber("~load",Bool,cb_load)
 if Config["proc"]==0: rospy.Subscriber("~redraw",Bool,cb_master)
@@ -516,7 +515,6 @@ broadcaster=tf2_ros.StaticTransformBroadcaster()
 Scene=[None]*len(Config["scenes"])
 Model=[None]*len(Config["scenes"])
 tfReg=[]
-Step=0
 MsgScore=list()
 isExec=False
 
